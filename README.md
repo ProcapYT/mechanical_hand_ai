@@ -132,7 +132,7 @@ program_stopped = False
 threading.Thread(target=main_loop).start()
 ```
 
-En el bucle principal se envia para el dedo seleccionado, el mínimo o el máximo (dependiendo de lo seleccionado) y para el resto de dedos el ángulo mínimo cada 600 ms para darle tiempo a los servos a moverse a la posición
+En el bucle principal se envia para el dedo seleccionado, el mínimo o el máximo (dependiendo de lo seleccionado) y para el resto de dedos el ángulo mínimo cada 200 ms para darle tiempo a los servos a moverse a la posición
 
 ```py
 def main_loop():

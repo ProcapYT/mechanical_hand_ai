@@ -100,7 +100,7 @@ def main_loop():
                 target_angles.append(min_calibration_angles[i])
 
         set_servo(target_angles)
-        time.sleep(0.6)
+        time.sleep(0.2)
 
 threading.Thread(target=main_loop).start()
 
