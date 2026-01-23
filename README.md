@@ -13,7 +13,7 @@ arduino = serial.Serial(port="COM5", baudrate=9600, timeout=1)
 Luego se pausa todo el proceso 2 segundos para darle tiempo al arduino para reiniciarse
 
 ```python
-time.sleepñ(2)
+time.sleep(2)
 ```
 
 Con esto el programa de python está conectado al arduino y puede enviar mensajes mediante el serial.
