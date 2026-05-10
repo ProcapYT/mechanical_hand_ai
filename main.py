@@ -112,29 +112,31 @@ def vector_angle(v1, v2):
     dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
     return np.degrees(np.arccos(dot))
 
-def joint_bend(a, b, c):
-    """Degrees of bend at joint b (180=straight, 0=fully curled)."""
-    return vector_angle(np.array(a) - np.array(b), np.array(c) - np.array(b))
-
 def get_finger_angles(hand_landmarks, frame, alpha=0.3):
     """Return dict of stabilized finger curl values (0=open, 180=closed)."""
     h, w, _ = frame.shape
-    lm = [(l.x * w, l.y * h, l.z * w) for l in hand_landmarks.landmark]
+    lm = [np.array([l.x * w, l.y * h, l.z * w]) for l in hand_landmarks.landmark]
 
     finger_angles = {}
     for name, idx in FINGERS.items():
         if name == "Thumb":
-            # Sum IP and MCP bend; thumb anatomy differs from fingers
-            mcp_bend = joint_bend(lm[idx[0]], lm[idx[1]], lm[idx[2]])  # CMC-MCP-IP
-            ip_bend  = joint_bend(lm[idx[1]], lm[idx[2]], lm[idx[3]])  # MCP-IP-TIP
-            # Both joints ~180° when open; subtract from 360 to get curl 0→~180
-            angle = clamp((360 - mcp_bend - ip_bend - 150) / 60 * 180, 0, 180)
+            # Distance from thumb tip to index MCP, normalized by palm width.
+            # More reliable than joint angles because thumb moves in 3D.
+            thumb_tip = lm[4][:2]
+            index_mcp = lm[5][:2]
+            palm_w = np.linalg.norm(lm[5][:2] - lm[17][:2]) + 1e-6
+            dist = np.linalg.norm(thumb_tip - index_mcp) / palm_w
+            # Extended: dist ~1.5, curled against palm: dist ~0.3
+            angle = clamp((1.5 - dist) / 1.2 * 180, 0, 180)
         else:
-            # Use PIP and DIP joints for accurate curl over full finger
-            pip_bend = joint_bend(lm[idx[0]], lm[idx[1]], lm[idx[2]])  # MCP-PIP-DIP
-            dip_bend = joint_bend(lm[idx[1]], lm[idx[2]], lm[idx[3]])  # PIP-DIP-TIP
-            # Both ~180° straight, ~60° fully curled → max curl ≈ 240°
-            angle = clamp((360 - pip_bend - dip_bend) / 240 * 180, 0, 180)
+            p = [lm[i] for i in idx]
+            v1 = p[1] - p[0]  # MCP→PIP
+            v2 = p[2] - p[1]  # PIP→DIP
+            v3 = p[3] - p[2]  # DIP→TIP
+            # Forward angle between consecutive segments: 0=straight, grows when curled
+            pip_angle = vector_angle(v1, v2)
+            dip_angle = vector_angle(v2, v3)
+            angle = clamp((pip_angle + dip_angle) / 160 * 180, 0, 180)
 
         if name in prev_angles:
             angle = prev_angles[name] + alpha * (angle - prev_angles[name])
