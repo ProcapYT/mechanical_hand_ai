@@ -115,4 +115,4 @@ finally:
     print("Closing program and writting file")
 
     with open("temp/angles.json", "w") as file:
-        file.write(str(min_calibration_angles + max_calibration_angles))
+        json.dump(min_calibration_angles + max_calibration_angles, file)

@@ -21,18 +21,31 @@ def clamp(num, minn, maxx):
 arduino = serial.Serial(port="COM5", baudrate=9600, timeout=1)
 time.sleep(2)  # Wait for Arduino to reset
 
-def set_servo(angles):
-    # Clamp each angle
-    clamped = [
-        180 - clamp(angle, CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5])
-        for i, angle in enumerate(angles)
+last_sent_angles = None
+last_send_time = 0.0
+SEND_INTERVAL = 0.05   # 20 Hz cap
+ANGLE_THRESHOLD = 2    # skip send if all fingers moved less than this
+
+def set_servo(finger_curls):
+    """Send finger curl angles (0=open, 180=closed) to the Arduino."""
+    global last_sent_angles, last_send_time
+
+    now = time.time()
+    if now - last_send_time < SEND_INTERVAL:
+        return
+    if last_sent_angles is not None and all(
+        abs(a - b) < ANGLE_THRESHOLD for a, b in zip(finger_curls, last_sent_angles)
+    ):
+        return
+
+    servo_angles = [
+        int(np.interp(curl, [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]))
+        for i, curl in enumerate(finger_curls)
     ]
 
-    # Convert to JSON string
-    payload = json.dumps(clamped)
-
-    # Send to Arduino (with newline so Arduino readStringUntil('\n') works)
-    arduino.write((payload + "\n").encode("utf-8"))
+    arduino.write((json.dumps(servo_angles) + "\n").encode("utf-8"))
+    last_sent_angles = finger_curls[:]
+    last_send_time = now
 
 # Load the calibrated angles
 CALIBRATED_ANGLES = [0, 0, 0, 0, 0, 180, 180, 180, 180, 180]
@@ -99,33 +112,30 @@ def vector_angle(v1, v2):
     dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
     return np.degrees(np.arccos(dot))
 
+def joint_bend(a, b, c):
+    """Degrees of bend at joint b (180=straight, 0=fully curled)."""
+    return vector_angle(np.array(a) - np.array(b), np.array(c) - np.array(b))
+
 def get_finger_angles(hand_landmarks, frame, alpha=0.3):
-    """Return dict of stabilized finger angles in 3D."""
+    """Return dict of stabilized finger curl values (0=open, 180=closed)."""
     h, w, _ = frame.shape
-    landmarks = [(lm.x * w, lm.y * h, lm.z * w) for lm in hand_landmarks.landmark]
+    lm = [(l.x * w, l.y * h, l.z * w) for l in hand_landmarks.landmark]
 
     finger_angles = {}
     for name, idx in FINGERS.items():
         if name == "Thumb":
-            cmc = np.array(landmarks[idx[0]])  # 1
-            mcp = np.array(landmarks[idx[1]])  # 2
-            tip = np.array(landmarks[idx[-1]]) # 4
-            v1 = cmc - mcp
-            v2 = tip - mcp
-            angle = vector_angle(v1, v2)
-
-            # Flip range: straight = 0°, curled = up to ~180°
-            angle = clamp((180 - angle) / 70 * 180, 0, 180)
+            # Sum IP and MCP bend; thumb anatomy differs from fingers
+            mcp_bend = joint_bend(lm[idx[0]], lm[idx[1]], lm[idx[2]])  # CMC-MCP-IP
+            ip_bend  = joint_bend(lm[idx[1]], lm[idx[2]], lm[idx[3]])  # MCP-IP-TIP
+            # Both joints ~180° when open; subtract from 360 to get curl 0→~180
+            angle = clamp((360 - mcp_bend - ip_bend - 150) / 60 * 180, 0, 180)
         else:
-            mcp = np.array(landmarks[idx[0]])
-            pip = np.array(landmarks[idx[1]])
-            tip = np.array(landmarks[idx[-1]])
-            v1 = pip - mcp
-            v2 = tip - pip
-            angle = vector_angle(v1, v2)
-            angle = angle / 130 * 180
+            # Use PIP and DIP joints for accurate curl over full finger
+            pip_bend = joint_bend(lm[idx[0]], lm[idx[1]], lm[idx[2]])  # MCP-PIP-DIP
+            dip_bend = joint_bend(lm[idx[1]], lm[idx[2]], lm[idx[3]])  # PIP-DIP-TIP
+            # Both ~180° straight, ~60° fully curled → max curl ≈ 240°
+            angle = clamp((360 - pip_bend - dip_bend) / 240 * 180, 0, 180)
 
-        # Smooth with previous value
         if name in prev_angles:
             angle = prev_angles[name] + alpha * (angle - prev_angles[name])
 
@@ -199,28 +209,22 @@ try:
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                
-                if (use_camera):
+
+                if use_camera:
                     angles = get_finger_angles(hand_landmarks, frame)
 
-                # Display on frame
                 y_offset = 30
                 for finger, angle in angles.items():
                     cv2.putText(frame, f"{finger}: {angle:.1f}", (10, y_offset),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     y_offset += 20
+        else:
+            cv2.putText(frame, "No hand detected", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         angle_arr = list(angles.values())
-        formatted_angles = []
-
-        for i in range(0, len(angle_arr)):
-            angle = angle_arr[i]
-            if isinstance(angle, (float, int)) and not math.isnan(angle):
-                # Map from (-180..180) to the calibrated angles for the servo
-                calibrated_angle = int(np.interp(abs(angle), [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]))
-                formatted_angles.append(calibrated_angle)
-
-        set_servo(list(formatted_angles))
+        if all(isinstance(a, (int, float)) and not math.isnan(a) for a in angle_arr):
+            set_servo(angle_arr)
 
         cv2.imshow("Hand Detection Window", frame)
 

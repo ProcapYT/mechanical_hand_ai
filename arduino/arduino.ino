@@ -2,7 +2,7 @@
 #include <ArduinoJson.h>
 
 Servo servos[5];
-int servoPins[5] = { 9, 10, 11, 12, 13 };  // Pins in the arduino board
+int servoPins[5] = { 9, 10, 11, 12, 6 };  // Pins in the arduino board (avoid 13, has onboard LED)
 int angle = 180;                            // Default position
 int numServos = sizeof(servoPins) / sizeof(servoPins[0]);
 
@@ -10,7 +10,7 @@ void setup() {
   Serial.begin(9600);  // Start serial communication
 
   for (int i = 0; i < numServos; i++) {
-    servos[i].attach(servoPins[i]);
+    servos[i].attach(servoPins[i], 500, 2500);  // SG90 pulse range
     servos[i].write(angle);
   }
 
