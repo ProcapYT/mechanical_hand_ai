@@ -125,7 +125,7 @@ def get_finger_angles(hand_landmarks, frame, alpha=0.3):
             palm_w = np.linalg.norm(lm2d[5] - lm2d[17]) + 1e-6
             dist = np.linalg.norm(thumb_tip - index_mcp) / palm_w
             # Extended: dist ~1.5, curled against palm: dist ~0.3
-            angle = clamp((1.5 - dist) / 0.8 * 180, 0, 180)
+            angle = clamp(180 - (1.5 - dist) / 0.8 * 180, 0, 180)
         else:
             p = [lm2d[i] for i in idx]
             v1 = p[1] - p[0]  # MCP→PIP
