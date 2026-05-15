@@ -1,0 +1,7 @@
+python-socketio==5.16.1
+opencv-python==4.10.0.84
+mediapipe==0.10.21
+numpy==1.26.4
+pyserial==3.5
+vosk==0.3.45
+pyaudio==0.2.14

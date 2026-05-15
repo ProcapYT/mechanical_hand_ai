@@ -10,6 +10,8 @@ import pyaudio
 import json
 import os
 import sys
+import socketio
+from argv import get_argv
 
 use_camera = True
 running = True # To close the app
@@ -17,9 +19,39 @@ running = True # To close the app
 def clamp(num, minn, maxx):
     return max(minn, min(num, maxx))
 
+# ---------------- Server Setup -----------------
+server_url = get_argv("--server")
+using_server = server_url != None
+
+if using_server:
+    sio = socketio.Client()
+    sio.connect(server_url)
+
+def send_server(finger_curls):
+    """Send finger curl angles (0=open, 180=closed) to the Arduino."""
+    global last_sent_angles, last_send_time
+
+    now = time.time()
+    if now - last_send_time < SEND_INTERVAL:
+        return
+    if last_sent_angles is not None and all(
+        abs(a - b) < ANGLE_THRESHOLD for a, b in zip(finger_curls, last_sent_angles)
+    ):
+        return
+
+    servo_angles = [
+        int(clamp(np.interp(curl, [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]), CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]))
+        for i, curl in enumerate(finger_curls)
+    ]
+
+    sio.emit("angles", (json.dumps(servo_angles) + "\n").encode("utf-8"))
+    last_sent_angles = finger_curls[:]
+    last_send_time = now
+
 # ---------------- Arduino Setup ----------------
-arduino = serial.Serial(port="COM3", baudrate=9600, timeout=1)
-time.sleep(2)  # Wait for Arduino to reset
+if not using_server:
+    arduino = serial.Serial(port="COM3", baudrate=9600, timeout=1)
+    time.sleep(2)  # Wait for Arduino to reset
 
 last_sent_angles = None
 last_send_time = 0.0
@@ -71,8 +103,9 @@ def arduino_print_thread():
         if line:
             print("Arduino says:", line)
 
-arduino_serial_thread = threading.Thread(target=arduino_print_thread)
-arduino_serial_thread.start()
+if not using_server:
+    arduino_serial_thread = threading.Thread(target=arduino_print_thread)
+    arduino_serial_thread.start()
 
 # ---------------- Mediapipe Setup ----------------
 mp_hands = mp.solutions.hands
@@ -188,6 +221,9 @@ def voice_listener():
                 angles[key] = 0
 
         if "salir" in text:
+            if using_server:
+                sio.emit("quit")
+
             running = False
             print("Stopping voice detection")
 
@@ -223,7 +259,10 @@ try:
 
         angle_arr = list(angles.values())
         if all(isinstance(a, (int, float)) and not math.isnan(a) for a in angle_arr):
-            set_servo(angle_arr)
+            if using_server:
+                send_server(angle_arr)
+            else:
+                set_servo(angle_arr)
 
         cv2.imshow("Hand Detection Window", frame)
 
@@ -237,6 +276,9 @@ finally:
     running = False
     cap.release()
     cv2.destroyAllWindows()
-    arduino_serial_thread.join() # Wait for it to exit cleanly
-    arduino.close()
+    if using_server:
+        sio.emit("quit")
+    else:
+        arduino_serial_thread.join() # Wait for it to exit cleanly
+        arduino.close()
     print("Resources released, serial closed.")
