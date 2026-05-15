@@ -16,7 +16,7 @@ else:
     os.mkdir("./temp")
 
 # Arduino setup
-arduino = serial.Serial(port="COM5", baudrate=9600, timeout=1)
+arduino = serial.Serial(port="COM3", baudrate=9600, timeout=1)
 time.sleep(2) # Wait for arduino to reset
 
 def set_servo(angles):
@@ -42,7 +42,7 @@ if os.path.exists("temp/angles.json"):
         max_calibration_angles = prev_angles[-5:]
 else:
     min_calibration_angles = [0, 0, 0, 0, 0]
-    max_calibration_angles = [180, 180, 180, 180, 180]
+    max_calibration_angles = [0, 0, 0, 0, 0]
 
 selected_finger = 0
 selected_angle = "min" # min / max
@@ -66,8 +66,10 @@ def change_angle(amount):
 
     if selected_angle == "max":
         max_calibration_angles[selected_finger] += amount
+        print(f"Max calibration angle for finger {selected_finger} set to {max_calibration_angles[selected_finger]}")
     else:
         min_calibration_angles[selected_finger] += amount
+        print(f"Min calibration angle for finger {selected_finger} set to {max_calibration_angles[selected_finger]}")
 
 # Select finger
 keyboard.on_release_key(2, lambda e: select_finger(0))

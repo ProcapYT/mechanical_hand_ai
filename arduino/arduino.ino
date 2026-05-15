@@ -2,7 +2,7 @@
 #include <ArduinoJson.h>
 
 Servo servos[5];
-int servoPins[5] = { 9, 10, 11, 12, 6 };  // Pins in the arduino board (avoid 13, has onboard LED)
+int servoPins[5] = { 9, 10, 11, 5, 6 };  // Pins in the arduino board (avoid 13, has onboard LED)
 int angle = 180;                            // Default position
 int numServos = sizeof(servoPins) / sizeof(servoPins[0]);
 
