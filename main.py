@@ -108,14 +108,22 @@ if not using_server:
     arduino_serial_thread.start()
 
 # ---------------- Mediapipe Setup ----------------
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
+from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions
+from mediapipe.tasks.python.vision import drawing_utils as mp_draw
+from mediapipe.tasks.python.vision import drawing_styles
+from mediapipe.tasks.python.vision.hand_landmarker import HandLandmarksConnections
+from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
+from mediapipe.tasks.python.core.base_options import BaseOptions
+
+_hand_options = HandLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path='models/hand_landmarker.task'),
+    running_mode=VisionTaskRunningMode.VIDEO,
+    num_hands=1,
+    min_hand_detection_confidence=0.7,
+    min_hand_presence_confidence=0.7,
+    min_tracking_confidence=0.7,
 )
+hands = HandLandmarker.create_from_options(_hand_options)
 
 FINGERS = {
     "Thumb": [1, 2, 3, 4],
@@ -148,8 +156,8 @@ def vector_angle(v1, v2):
 def get_finger_angles(hand_landmarks, frame, alpha=0.3):
     """Return dict of stabilized finger curl values (0=open, 180=closed)."""
     h, w, _ = frame.shape
-    lm2d = [np.array([l.x * w, l.y * h]) for l in hand_landmarks.landmark]
-    lm3d = [np.array([l.x, l.y, l.z]) for l in hand_landmarks.landmark]
+    lm2d = [np.array([l.x * w, l.y * h]) for l in hand_landmarks]
+    lm3d = [np.array([l.x, l.y, l.z]) for l in hand_landmarks]
 
     finger_angles = {}
     for name, idx in FINGERS.items():
@@ -240,14 +248,21 @@ try:
             break
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb_frame)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        results = hands.detect_for_video(mp_image, int(time.time() * 1000))
 
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+        if results.hand_landmarks:
+            for hand_lms in results.hand_landmarks:
+                mp_draw.draw_landmarks(
+                    frame,
+                    hand_lms,
+                    HandLandmarksConnections.HAND_CONNECTIONS,
+                    drawing_styles.get_default_hand_landmarks_style(),
+                    drawing_styles.get_default_hand_connections_style(),
+                )
 
                 if use_camera:
-                    angles = get_finger_angles(hand_landmarks, frame)
+                    angles = get_finger_angles(hand_lms, frame)
 
                 y_offset = 30
                 for finger, angle in angles.items():
@@ -277,6 +292,7 @@ finally:
     running = False
     cap.release()
     cv2.destroyAllWindows()
+    hands.close()
     if using_server:
         sio.emit("quit")
     else:

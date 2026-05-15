@@ -6,7 +6,7 @@ import { Server as SocketServer } from "socket.io";
 
 const app = express();
 const server = createServer(app);
-const io = new SocketServer(server);
+const io = new SocketServer(server, { cors: { origin: "*" } });
 
 const port = new SerialPort({ path: "COM3", baudRate: 9600 });
 
