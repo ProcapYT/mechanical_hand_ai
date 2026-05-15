@@ -40,7 +40,7 @@ def send_server(finger_curls):
         return
 
     servo_angles = [
-        int(clamp(np.interp(curl, [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]), CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]))
+        int(clamp(np.interp(curl, [0, 180], [180 - CALIBRATED_ANGLES[i + 5], 180 - CALIBRATED_ANGLES[i]]), 180 - CALIBRATED_ANGLES[i + 5], 180 - CALIBRATED_ANGLES[i]))
         for i, curl in enumerate(finger_curls)
     ]
 
@@ -71,7 +71,7 @@ def set_servo(finger_curls):
         return
 
     servo_angles = [
-        int(clamp(np.interp(curl, [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]), CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]))
+        int(clamp(np.interp(curl, [0, 180], [180 - CALIBRATED_ANGLES[i + 5], 180 - CALIBRATED_ANGLES[i]]), 180 - CALIBRATED_ANGLES[i + 5], 180 - CALIBRATED_ANGLES[i]))
         for i, curl in enumerate(finger_curls)
     ]
 
@@ -149,13 +149,14 @@ def get_finger_angles(hand_landmarks, frame, alpha=0.3):
     """Return dict of stabilized finger curl values (0=open, 180=closed)."""
     h, w, _ = frame.shape
     lm2d = [np.array([l.x * w, l.y * h]) for l in hand_landmarks.landmark]
+    lm3d = [np.array([l.x, l.y, l.z]) for l in hand_landmarks.landmark]
 
     finger_angles = {}
     for name, idx in FINGERS.items():
         if name == "Thumb":
-            thumb_tip = lm2d[4]
-            index_mcp = lm2d[5]
-            palm_w = np.linalg.norm(lm2d[5] - lm2d[17]) + 1e-6
+            thumb_tip = lm3d[4]
+            index_mcp = lm3d[5]
+            palm_w = np.linalg.norm(lm3d[5] - lm3d[17]) + 1e-6
             dist = np.linalg.norm(thumb_tip - index_mcp) / palm_w
             # Extended: dist ~1.5, curled against palm: dist ~0.3
             angle = clamp(180 - (1.5 - dist) / 0.8 * 180, 0, 180)
@@ -166,7 +167,7 @@ def get_finger_angles(hand_landmarks, frame, alpha=0.3):
             v3 = p[3] - p[2]  # DIP→TIP
             pip_angle = vector_angle(v1, v2)
             dip_angle = vector_angle(v2, v3)
-            angle = clamp(180 - (pip_angle + dip_angle) / 55 * 180, 0, 180)
+            angle = clamp(180 - (pip_angle + dip_angle) / 120 * 180, 0, 180)
 
         if name in prev_angles:
             angle = prev_angles[name] + alpha * (angle - prev_angles[name])
