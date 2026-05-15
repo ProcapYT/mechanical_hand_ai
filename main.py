@@ -18,7 +18,7 @@ def clamp(num, minn, maxx):
     return max(minn, min(num, maxx))
 
 # ---------------- Arduino Setup ----------------
-arduino = serial.Serial(port="COM5", baudrate=9600, timeout=1)
+arduino = serial.Serial(port="COM3", baudrate=9600, timeout=1)
 time.sleep(2)  # Wait for Arduino to reset
 
 last_sent_angles = None
@@ -39,7 +39,7 @@ def set_servo(finger_curls):
         return
 
     servo_angles = [
-        int(np.interp(curl, [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]))
+        int(clamp(np.interp(curl, [0, 180], [CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]]), CALIBRATED_ANGLES[i], CALIBRATED_ANGLES[i + 5]))
         for i, curl in enumerate(finger_curls)
     ]
 
@@ -115,28 +115,25 @@ def vector_angle(v1, v2):
 def get_finger_angles(hand_landmarks, frame, alpha=0.3):
     """Return dict of stabilized finger curl values (0=open, 180=closed)."""
     h, w, _ = frame.shape
-    lm = [np.array([l.x * w, l.y * h, l.z * w]) for l in hand_landmarks.landmark]
+    lm2d = [np.array([l.x * w, l.y * h]) for l in hand_landmarks.landmark]
 
     finger_angles = {}
     for name, idx in FINGERS.items():
         if name == "Thumb":
-            # Distance from thumb tip to index MCP, normalized by palm width.
-            # More reliable than joint angles because thumb moves in 3D.
-            thumb_tip = lm[4][:2]
-            index_mcp = lm[5][:2]
-            palm_w = np.linalg.norm(lm[5][:2] - lm[17][:2]) + 1e-6
+            thumb_tip = lm2d[4]
+            index_mcp = lm2d[5]
+            palm_w = np.linalg.norm(lm2d[5] - lm2d[17]) + 1e-6
             dist = np.linalg.norm(thumb_tip - index_mcp) / palm_w
             # Extended: dist ~1.5, curled against palm: dist ~0.3
             angle = clamp((1.5 - dist) / 0.8 * 180, 0, 180)
         else:
-            p = [lm[i] for i in idx]
+            p = [lm2d[i] for i in idx]
             v1 = p[1] - p[0]  # MCP→PIP
             v2 = p[2] - p[1]  # PIP→DIP
             v3 = p[3] - p[2]  # DIP→TIP
-            # Forward angle between consecutive segments: 0=straight, grows when curled
             pip_angle = vector_angle(v1, v2)
             dip_angle = vector_angle(v2, v3)
-            angle = clamp((pip_angle + dip_angle) / 90 * 180, 0, 180)
+            angle = clamp(180 - (pip_angle + dip_angle) / 55 * 180, 0, 180)
 
         if name in prev_angles:
             angle = prev_angles[name] + alpha * (angle - prev_angles[name])
@@ -173,8 +170,8 @@ def voice_listener():
         else:
             partial = json.loads(rec.PartialResult())
             if partial["partial"]:
-                text = partial
-        
+                text = partial["partial"]
+
         # Commands (one word)
         if "congelar" in text:
             use_camera = False
@@ -183,12 +180,12 @@ def voice_listener():
             use_camera = True
 
         if "abrir" in text:
-            for key, value in zip(angles.keys(), CALIBRATED_ANGLES):
-                angles[key] = value
+            for key in angles.keys():
+                angles[key] = 180
 
         if "cerrar" in text:
-            for key, value in zip(angles.keys(), CALIBRATED_ANGLES[len(angles):]):
-                angles[key] = value
+            for key in angles.keys():
+                angles[key] = 0
 
         if "salir" in text:
             running = False

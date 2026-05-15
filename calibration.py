@@ -23,7 +23,7 @@ if (os.path.exists("./temp/angles.json")):
         sys.exit(0)
 
 # Arduino setup
-arduino = serial.Serial(port="COM5", baudrate=9600, timeout=1)
+arduino = serial.Serial(port="COM3", baudrate=9600, timeout=1)
 time.sleep(2) # Wait for arduino to reset
 
 def set_servo(angles):
